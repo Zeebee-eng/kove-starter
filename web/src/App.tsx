@@ -60,3 +60,17 @@ export default function App() {
     </div>
   )
 }
+
+async function createTestAch() {
+  setSending(true)
+  setError("")
+  setResult("")
+  try {
+    const res = await axios.post(`${API}/v1/test/payment_intent_ach`, {})
+    setResult(JSON.stringify(res.data, null, 2))
+  } catch (e: any) {
+    setError(String(e?.response?.data || e.message))
+  } finally {
+    setSending(false)
+  }
+}
