@@ -174,6 +174,72 @@ app.post("/v1/tickets/:id/advance", (_req: Request, res: Response) => {
   res.json(t)
 })
 
+// --- Discount helpers (1% non-stacking, 3 days) ---
+function computeDiscountCents(rentCents: number, autopayEnabledAtISO?: string, paidAtISO?: string, dueDateISO?: string) {
+  if (!rentCents || !dueDateISO) return { discount: 0, reason: "missing_inputs" }
+  const ms3d = 3 * 24 * 60 * 60 * 1000
+  const due = new Date(dueDateISO).getTime()
+
+  const paidAt = paidAtISO ? new Date(paidAtISO).getTime() : Date.now()
+  const autopayAt = autopayEnabledAtISO ? new Date(autopayEnabledAtISO).getTime() : undefined
+
+  const qualifiesEarly = paidAt <= (due - ms3d)
+  const qualifiesAutopay = !!autopayAt && autopayAt <= (due - ms3d)
+
+  const qualifies = qualifiesEarly || qualifiesAutopay
+  const discount = qualifies ? Math.floor(rentCents * 0.01) : 0
+
+  let reason: "none" | "early" | "autopay" = "none"
+  if (discount > 0) reason = qualifiesEarly ? "early" : "autopay"
+
+  return { discount, reason }
+}
+
+// Pay rent (card) with incentive logic.
+// Body: { rentCents: number, dueDateISO: string, autopayEnabledAtISO?: string, simulatePaidAtISO?: string }
+app.post("/v1/payments/rent_intent", async (req: Request, res: Response) => {
+  try {
+    const rentCents = Number(req.body?.rentCents || 0)
+    const dueDateISO = String(req.body?.dueDateISO || "")
+    const autopayEnabledAtISO = req.body?.autopayEnabledAtISO ? String(req.body.autopayEnabledAtISO) : undefined
+    const simulatePaidAtISO = req.body?.simulatePaidAtISO ? String(req.body.simulatePaidAtISO) : undefined
+
+    if (!rentCents || !dueDateISO) {
+      return res.status(400).json({ error: "rentCents and dueDateISO are required" })
+    }
+
+    const { discount, reason } = computeDiscountCents(rentCents, autopayEnabledAtISO, simulatePaidAtISO, dueDateISO)
+    const amount = Math.max(0, rentCents - discount)
+
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, { apiVersion: "2024-06-20" })
+    const pi = await stripe.paymentIntents.create({
+      amount,
+      currency: "usd",
+      // Keep card here for simplicity; ACH version can be added similarly
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      payment_method: "pm_card_visa",
+      confirm: true,
+    })
+
+    return res.json({
+      payment_intent_id: pi.id,
+      status: pi.status,
+      receipt: {
+        rentCents,
+        discountCents: discount,
+        discountReason: reason,          // "early" | "autopay" | "none"
+        totalCents: amount,
+        dueDateISO,
+        autopayEnabledAtISO: autopayEnabledAtISO || null,
+        paidAtISO: simulatePaidAtISO || new Date().toISOString(),
+      }
+    })
+  } catch (err: any) {
+    console.error("rent_intent error:", err?.message || err)
+    return res.status(400).json({ error: err?.message || "unknown" })
+  }
+})
+
 
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
