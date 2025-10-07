@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios"
 
+function dollars(cents: number) { return `$${(cents/100).toFixed(2)}` }
+
 const API = import.meta.env.VITE_API_URL
 
 type Msg = { id: string; role: "assistant" | "user"; text: string }
@@ -8,6 +10,18 @@ function uid() { return Math.random().toString(36).slice(2) }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 export default function App() {
+  const [showDiscountForm, setShowDiscountForm] = useState(false)
+  const [rent, setRent] = useState(200000) // $2000.00 default
+  const [dueISO, setDueISO] = useState(() => {
+  const d = new Date()
+  d.setMonth(d.getMonth(), 1) // set to 1st of this month
+  if (d.getTime() < Date.now()) d.setMonth(d.getMonth() + 1, 1) // next month if past
+  d.setHours(9,0,0,0)
+  return d.toISOString()
+})
+  const [autopayOn, setAutopayOn] = useState(false)
+  const [simulateEarly, setSimulateEarly] = useState(false)
+
   const [health, setHealth] = useState<string>("checking…")
   const [messages, setMessages] = useState<Msg[]>([
     { id: uid(), role: "assistant", text: "Hi! Choose an action: pay rent (card/ACH) or submit a maintenance request." }
@@ -16,6 +30,43 @@ export default function App() {
   const [input, setInput] = useState("")
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
+
+  async function payCardWithDiscount() {
+  if (busy) return; setBusy(true)
+  setShowDiscountForm(false)
+
+  // Narrate in chat
+  push("user", "Pay rent (Card) — with discount")
+  push("assistant", "Calculating incentive and creating PaymentIntent…")
+
+  try {
+    // If simulating early pay, pick a paidAt 4 days before due date
+    const body: any = {
+      rentCents: rent,
+      dueDateISO: dueISO,
+    }
+    if (autopayOn) body.autopayEnabledAtISO = new Date(new Date(dueISO).getTime() - 5*24*60*60*1000).toISOString()
+    if (simulateEarly) body.simulatePaidAtISO = new Date(new Date(dueISO).getTime() - 4*24*60*60*1000).toISOString()
+
+    const res = await axios.post(`${API}/v1/payments/rent_intent`, body)
+    const { payment_intent_id, status, receipt } = res.data
+
+    // Pretty receipt
+    const lines = [
+      `Rent: ${dollars(receipt.rentCents)}`,
+      receipt.discountCents > 0 ? `Discount (1% ${receipt.discountReason}): -${dollars(receipt.discountCents)}` : `Discount: ${dollars(0)}`,
+      `Total charged: ${dollars(receipt.totalCents)}`,
+      `Due date: ${new Date(receipt.dueDateISO).toLocaleString()}`
+    ]
+    push("assistant", `Receipt for ${payment_intent_id}\n` + lines.join("\n"))
+    if (payment_intent_id) await pollPI(payment_intent_id)
+  } catch (e: any) {
+    push("assistant", `Could not create rent payment: ${e?.response?.data?.error || e.message}`)
+  } finally {
+    setBusy(false)
+  }
+}
+
 
   const styles = useMemo(() => ({
     wrap: { fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif", padding: 16 } as React.CSSProperties,
@@ -144,11 +195,33 @@ export default function App() {
         ))}
 
         <div style={styles.chips}>
+          <button style={styles.chip as any} onClick={() => setShowDiscountForm(v => !v)} disabled={busy}>
+  Pay rent (Card) — with discount </button>
           <button style={styles.chip as any} onClick={payCard} disabled={busy}>Pay rent (Card)</button>
           <button style={styles.chip as any} onClick={payAch} disabled={busy}>Pay rent (ACH)</button>
           <button style={styles.chip as any} onClick={startMaintenance} disabled={busy}>Submit maintenance</button>
           <button style={styles.chip as any} onClick={nextStatus} disabled={busy || !currentTicketId}>Next status</button>
         </div>
+
+        {showDiscountForm && (
+  <div style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, marginTop: 10 }}>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <label>Rent (cents):
+        <input type="number" value={rent} onChange={e => setRent(Number(e.target.value || 0))} style={{ marginLeft: 6, width: 140 }} />
+      </label>
+      <label>Due (ISO):
+        <input type="text" value={dueISO} onChange={e => setDueISO(e.target.value)} style={{ marginLeft: 6, width: 320 }} />
+      </label>
+      <label><input type="checkbox" checked={autopayOn} onChange={e => setAutopayOn(e.target.checked)} /> Autopay enabled ≥3 days before due</label>
+      <label><input type="checkbox" checked={simulateEarly} onChange={e => setSimulateEarly(e.target.checked)} /> Simulate early pay (≥3 days)</label>
+      <button style={styles.chip as any} onClick={payCardWithDiscount} disabled={busy}>Submit</button>
+    </div>
+    <div style={{ marginTop: 6, color: "#666", fontSize: 13 }}>
+      Rule: 1% off if autopay is enabled ≥3 days before due <i>or</i> you pay ≥3 days before due. No stacking. (We simulate “paid at” and “autopay enabled at” for demo.)
+    </div>
+  </div>
+)}
+
       </div>
 
       <div style={styles.composer}>
