@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import Stripe from "stripe";
+import { raw } from "express";
 
 // Create app
 const app = express();
@@ -24,7 +25,6 @@ app.get("/v1/health", (_req: Request, res: Response) => {
 });
 
 // Stripe webhook: raw body required
-import { raw } from "express";
 app.post(
   "/v1/stripe/webhook",
   raw({ type: "application/json" }),
