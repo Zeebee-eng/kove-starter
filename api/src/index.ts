@@ -121,6 +121,60 @@ app.get("/v1/test/payment_intent/:id", async (req: Request, res: Response) => {
   }
 })
 
+// ---- Demo-only in-memory maintenance tickets ----
+type TicketStage = "New" | "Acknowledged" | "Scheduled" | "In_Progress" | "Completed"
+type Ticket = {
+  id: string
+  summary: string
+  stage: TicketStage
+  createdAt: string
+  events: { at: string; note: string; stage: TicketStage }[]
+}
+
+const tickets: Record<string, Ticket> = {}
+function tid() { return Math.random().toString(36).slice(2, 10) }
+function now() { return new Date().toISOString() }
+
+const nextStage: Record<TicketStage, TicketStage> = {
+  New: "Acknowledged",
+  Acknowledged: "Scheduled",
+  Scheduled: "In_Progress",
+  In_Progress: "Completed",
+  Completed: "Completed",
+}
+
+// Create a maintenance ticket
+app.post("/v1/tickets", express.json(), (req: Request, res: Response) => {
+  const summary = String(req.body?.summary || "").trim()
+  if (!summary) return res.status(400).json({ error: "summary required" })
+  const id = tid()
+  const ticket: Ticket = {
+    id, summary, stage: "New", createdAt: now(),
+    events: [{ at: now(), note: "Ticket created", stage: "New" }],
+  }
+  tickets[id] = ticket
+  res.json(ticket)
+})
+
+
+app.get("/v1/tickets/:id", (_req: Request, res: Response) => {
+  const t = tickets[_req.params.id]
+  if (!t) return res.status(404).json({ error: "not found" })
+  res.json(t)
+})
+
+
+app.post("/v1/tickets/:id/advance", (_req: Request, res: Response) => {
+  const t = tickets[_req.params.id]
+  if (!t) return res.status(404).json({ error: "not found" })
+  const next = nextStage[t.stage]
+  if (next === t.stage) return res.json(t) // already Completed
+  t.stage = next
+  t.events.push({ at: now(), note: `Moved to ${next}`, stage: next })
+  res.json(t)
+})
+
+
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
 });
