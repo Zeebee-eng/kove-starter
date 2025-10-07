@@ -63,6 +63,25 @@ app.post(
 
 // Start server
 const PORT = Number(process.env.PORT || 4000);
+
+// Test route to create a simple PaymentIntent (card only, no redirects)
+app.post("/v1/test/payment_intent", async (_req, res) => {
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, { apiVersion: "2024-06-20" })
+    const pi = await stripe.paymentIntents.create({
+      amount: 2000,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true, allow_redirects: "never" },
+      payment_method: "pm_card_visa",
+      confirm: true
+    })
+    res.json({ id: pi.id, status: pi.status })
+  } catch (err: any) {
+    console.error("Create PI error:", err?.message || err)
+    res.status(400).json({ error: err?.message || "unknown" })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
 });
