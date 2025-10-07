@@ -105,6 +105,22 @@ app.post("/v1/test/payment_intent", async (_req, res) => {
   }
 })
 
+// Get PaymentIntent status by id (used by the chat to poll)
+app.get("/v1/test/payment_intent/:id", async (req: Request, res: Response) => {
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, { apiVersion: "2024-06-20" })
+    const pi = await stripe.paymentIntents.retrieve(req.params.id)
+    res.json({
+      id: pi.id,
+      status: pi.status,
+      latest_charge: typeof pi.latest_charge === "string" ? pi.latest_charge : (pi.latest_charge?.id ?? null),
+      next_action: (pi as any).next_action ?? null
+    })
+  } catch (err: any) {
+    res.status(404).json({ error: err?.message || "not found" })
+  }
+})
+
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
 });
