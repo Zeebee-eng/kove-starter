@@ -240,6 +240,53 @@ app.post("/v1/payments/rent_intent", async (req: Request, res: Response) => {
   }
 })
 
+// ---- Overdue helper (grace = 3 days) ----
+function computeOverdue(dueDateISO: string, graceDays = 3) {
+  const due = new Date(dueDateISO).getTime()
+  if (Number.isNaN(due)) return { ok: false, error: "invalid_dueDateISO" }
+
+  const graceMs = graceDays * 24 * 60 * 60 * 1000
+  const cutoff = due + graceMs
+  const now = Date.now()
+
+  const isOverdue = now > cutoff
+  const daysPastDue = isOverdue ? Math.floor((now - cutoff) / (24 * 60 * 60 * 1000)) + 1 : 0
+
+  return { ok: true, isOverdue, daysPastDue, cutoffISO: new Date(cutoff).toISOString() }
+}
+
+// Check overdue status and return safe, neutral message templates
+// Body: { dueDateISO: string, amountCents: number, graceDays?: number }
+app.post("/v1/overdue/check", express.json(), (req: Request, res: Response) => {
+  const amountCents = Number(req.body?.amountCents || 0)
+  const dueDateISO = String(req.body?.dueDateISO || "")
+  const graceDays = Number(req.body?.graceDays ?? 3)
+
+  if (!amountCents || !dueDateISO) {
+    return res.status(400).json({ error: "amountCents and dueDateISO are required" })
+  }
+
+  const r = computeOverdue(dueDateISO, graceDays)
+  if (!r.ok) return res.status(400).json({ error: r.error })
+
+  // Friendly, non-threatening copy (not debt collection; avoids legal advice)
+  const amount = `$${(amountCents / 100).toFixed(2)}`
+  const templates = {
+    reminder: `Friendly reminder: ${amount} for this month’s rent appears open. Would you like a link to pay now or set up autopay?`,
+    planOffer: `If helpful, we can set up a one-time plan for this month. Let me know what works and I’ll pass it along.`,
+    statusCheck: `Checking in on rent for this month. If you’ve already paid, thank you—please ignore this note and feel free to send the receipt.`,
+    lateFeeInfo: `Heads up: the lease mentions a late fee after the grace period. If you’d like details, I can share the exact clause.`,
+  }
+
+  res.json({
+    isOverdue: r.isOverdue,
+    daysPastDue: r.daysPastDue,
+    cutoffISO: r.cutoffISO,
+    amountCents,
+    messages: templates
+  })
+})
+
 
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
