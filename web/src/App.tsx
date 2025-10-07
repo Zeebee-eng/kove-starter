@@ -31,6 +31,43 @@ export default function App() {
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null)
   const chatRef = useRef<HTMLDivElement>(null)
 
+  async function checkOverduePrivate() {
+  if (busy) return
+  setBusy(true)
+  // We’ll re-use your existing rent & dueISO state from the discount form chunk.
+  push("user", "Check overdue (private)")
+  push("assistant", "Reviewing status…")
+
+  try {
+    const body = { amountCents: rent, dueDateISO: dueISO, graceDays: 3 }
+    const { data } = await axios.post(`${API}/v1/overdue/check`, body)
+
+    if (!data.isOverdue) {
+      push("assistant", `Not overdue. Grace period ends ${new Date(data.cutoffISO).toLocaleString()}.`)
+    } else {
+      // Post a private-style alert (this is NOT sent to tenant—just shown in the landlord thread)
+      push(
+        "assistant",
+        [
+          `🔔 Private alert for landlord`,
+          `• Amount: $${(data.amountCents/100).toFixed(2)}`,
+          `• Overdue by: ${data.daysPastDue} day(s) (after grace)`,
+          `Suggested messages:`,
+          `1) ${data.messages.reminder}`,
+          `2) ${data.messages.planOffer}`,
+          `3) ${data.messages.statusCheck}`,
+          `4) ${data.messages.lateFeeInfo}`
+        ].join("\n")
+      )
+    }
+  } catch (e: any) {
+    push("assistant", `Overdue check failed: ${e?.response?.data?.error || e.message}`)
+  } finally {
+    setBusy(false)
+  }
+}
+
+
   async function payCardWithDiscount() {
   if (busy) return; setBusy(true)
   setShowDiscountForm(false)
@@ -200,6 +237,7 @@ export default function App() {
           <button style={styles.chip as any} onClick={payCard} disabled={busy}>Pay rent (Card)</button>
           <button style={styles.chip as any} onClick={payAch} disabled={busy}>Pay rent (ACH)</button>
           <button style={styles.chip as any} onClick={startMaintenance} disabled={busy}>Submit maintenance</button>
+          <button style={styles.chip as any} onClick={checkOverduePrivate} disabled={busy}>Check overdue (private)</button>
           <button style={styles.chip as any} onClick={nextStatus} disabled={busy || !currentTicketId}>Next status</button>
         </div>
 
