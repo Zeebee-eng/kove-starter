@@ -1,5 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import * as React from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios"
+import { useAuth0 } from "@auth0/auth0-react"
+
 
 const API = import.meta.env.VITE_API_URL
 
@@ -35,6 +38,7 @@ export default function App() {
     { id: uid(), role: "assistant", text: "Welcome to your lease thread. Choose an action below." }
   ])
   const [busy, setBusy] = useState(false)
+  const { isAuthenticated, user, loginWithRedirect, logout, getAccessTokenSilently } = useAuth0()
   const [input, setInput] = useState("")
   const [currentTicketId, setCurrentTicketId] = useState<string | null>(null)
   const [showDiscountForm, setShowDiscountForm] = useState(false)
