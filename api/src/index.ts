@@ -85,3 +85,26 @@ app.post("/v1/test/payment_intent", async (_req, res) => {
 app.listen(PORT, () => {
   console.log(`API listening on :${PORT}`);
 });
+
+app.post("/v1/test/payment_intent_ach", async (_req, res) => {
+  try {
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, { apiVersion: "2024-06-20" })
+    const pi = await stripe.paymentIntents.create({
+      amount: 5000, // $50
+      currency: "usd",
+      payment_method_types: ["us_bank_account"],
+      payment_method_options: {
+        us_bank_account: {
+          financial_connections: { permissions: ["payment_method"] }
+        }
+      },
+      confirm: true,
+      payment_method: "pm_usBankAccount", // special test pm
+    })
+    res.json({ id: pi.id, status: pi.status })
+  } catch (err: any) {
+    console.error("ACH PI error:", err?.message || err)
+    res.status(400).json({ error: err?.message || "unknown" })
+  }
+})
+
