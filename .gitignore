@@ -1,0 +1,27 @@
+# node & build
+node_modules/
+dist/
+coverage/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files (ALL packages)
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# macOS / editor junk
+.DS_Store
+*.swp
+*.swo
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Expo / RN caches
+.expo/
+.expo-shared/
